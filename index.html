@@ -8,7 +8,7 @@
   <!-- 1. Tailwind CSS (Untuk Tampilan) -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- 2. Pengaturan Import Map -->
+  <!-- 2. Pengaturan Import Map (Agar bisa pakai 'import' seperti di editor) -->
   <script type="importmap">
     {
       "imports": {
@@ -22,16 +22,18 @@
     }
   </script>
 
-  <!-- 3. Babel Standalone (Untuk menerjemahkan React JSX) -->
+  <!-- 3. Babel Standalone (Untuk menerjemahkan React JSX di browser) -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   
   <style>
+    /* Animasi tambahan */
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     .animate-in { animation: fadeIn 0.3s ease-out forwards; }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans">
   
+  <!-- Tempat Aplikasi React akan Muncul -->
   <div id="root"></div>
 
   <!-- 4. Kode Utama Aplikasi -->
@@ -46,34 +48,67 @@
     } from 'firebase/firestore';
     import { 
       PlusCircle, Wallet, TrendingUp, TrendingDown, Trash2, 
-      FileSpreadsheet, Save, X, Pencil, Share2, Copy, AlertCircle 
+      FileSpreadsheet, Save, X, Pencil, Share2, Copy, AlertCircle, Check 
     } from 'lucide-react';
 
     // ==========================================
-    // KONFIGURASI FIREBASE (Sesuai Permintaan)
+    // KONFIGURASI FIREBASE ANDA (WAJIB DIISI!)
     // ==========================================
+    // 1. Buka console.firebase.google.com
+    // 2. Buat project baru (atau pakai yang ada)
+    // 3. Masuk ke Project Settings -> General -> Your apps -> Add app (Web)
+    // 4. Copy "const firebaseConfig = {...}" dan timpa di bawah ini:
+    
     const firebaseConfig = {
-      apiKey: "AIzaSyAFxTyMgT1g-_P_sFoHitqLAFDd8KWIkMY",
-      authDomain: "keuangan-121222.firebaseapp.com",
-      databaseURL: "https://keuangan-121222-default-rtdb.asia-southeast1.firebasedatabase.app",
-      projectId: "keuangan-121222",
-      storageBucket: "keuangan-121222.firebasestorage.app",
-      messagingSenderId: "108150191528",
-      appId: "1:108150191528:web:7a84f02e957d27431dd99d",
-      measurementId: "G-1PK70XXVF6"
-    };
+  apiKey: "AIzaSyAFxTyMgT1g-_P_sFoHitqLAFDd8KWIkMY",
+  authDomain: "keuangan-121222.firebaseapp.com",
+  databaseURL: "https://keuangan-121222-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "keuangan-121222",
+  storageBucket: "keuangan-121222.firebasestorage.app",
+  messagingSenderId: "108150191528",
+  appId: "1:108150191528:web:7a84f02e957d27431dd99d",
+  measurementId: "G-1PK70XXVF6"
+};
 
-    // ID Unik untuk Path Database
-    const APP_ID = "dompet_couple_v1";
-    // Path: apps/{APP_ID}/transactions
+    // ID Unik untuk memisahkan data (Boleh diganti sesuka hati)
+    const APP_ID = "dompet_couple_kita_v1";
     const COLLECTION_PATH = ['apps', APP_ID, 'transactions'];
 
     // Inisialisasi Firebase
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
+    let app, auth, db;
+    // Cek apakah config sudah diisi (ada apiKey nya)
+    const isConfigured = firebaseConfig && firebaseConfig.apiKey;
+    
+    if (isConfigured) {
+      app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      db = getFirestore(app);
+    }
 
+    // --- Komponen Utama Aplikasi ---
     function App() {
+      // Jika belum dikonfigurasi, tampilkan panduan
+      if (!isConfigured) {
+        return (
+          <div className="min-h-screen flex items-center justify-center p-6">
+            <div className="bg-white p-8 rounded-2xl shadow-xl max-w-lg text-center border border-rose-100">
+              <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertCircle size={32} />
+              </div>
+              <h2 className="text-2xl font-bold text-slate-800 mb-2">Database Belum Terhubung</h2>
+              <p className="text-slate-600 mb-6 leading-relaxed">
+                Agar aplikasi ini bisa menyimpan data secara online, Anda perlu menghubungkannya ke Firebase milik Anda sendiri.
+              </p>
+              <div className="text-left bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm font-mono text-slate-700 overflow-x-auto">
+                1. Buka file <strong>index.html</strong> ini di teks editor.<br/>
+                2. Cari bagian <code>const firebaseConfig = &#123;...&#125;</code>.<br/>
+                3. Isi dengan config dari Firebase Console Anda.
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       const [user, setUser] = useState(null);
       const [transactions, setTransactions] = useState([]);
       const [loading, setLoading] = useState(true);
@@ -96,21 +131,12 @@
 
       // --- 1. Authentication (Login Anonim) ---
       useEffect(() => {
-        // Coba login anonim agar bisa akses database
         signInAnonymously(auth).catch((error) => {
-            console.error("Gagal login:", error);
-            
-            // Penanganan Error Spesifik untuk membantu user jika lupa mengaktifkan Auth
-            if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed' || error.code === 'auth/admin-restricted-operation') {
-              alert("⚠️ PENTING: Fitur Login Anonim Belum Aktif!\n\nError ini terjadi karena Anda belum mengaktifkan 'Anonymous Sign-in' di Firebase Console.\n\nCaranya:\n1. Buka console.firebase.google.com\n2. Pilih Project 'keuangan-121222'\n3. Masuk ke menu Authentication -> Sign-in method\n4. Aktifkan (Enable) provider 'Anonymous'.");
-            } else {
-              alert("Gagal terhubung ke database: " + error.message);
-            }
+            console.error("Gagal login anonim:", error);
+            alert("Gagal terhubung ke database. Cek konfigurasi Firebase Anda.");
         });
         
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-            setUser(currentUser);
-        });
+        const unsubscribe = onAuthStateChanged(auth, setUser);
         return () => unsubscribe();
       }, []);
 
@@ -120,30 +146,21 @@
 
         const transactionsRef = collection(db, ...COLLECTION_PATH);
         
+        // Menggunakan onSnapshot untuk update realtime
         const unsubscribe = onSnapshot(transactionsRef, (snapshot) => {
           const data = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
           }));
           
-          // Sort client-side (Terbaru di atas)
+          // Sort di client side agar lebih cepat dan hemat index
           data.sort((a, b) => new Date(b.date) - new Date(a.date));
           
           setTransactions(data);
           setLoading(false);
         }, (error) => {
           console.error("Firestore Error:", error);
-          
-          // DETEKSI ERROR DATABASE BELUM DIBUAT
-          if (error.message.includes("Cloud Firestore API has not been used") || error.code === 'permission-denied') {
-             alert("⚠️ DATABASE BELUM AKTIF!\n\nAnda perlu mengaktifkan 'Cloud Firestore' di Firebase Console.\n\nCaranya:\n1. Buka console.firebase.google.com\n2. Pilih project 'keuangan-121222'\n3. Klik menu 'Firestore Database' di kiri\n4. Klik 'Create Database' -> pilih mode 'Start in Test Mode' -> Enable.");
-          } else if (error.code === 'resource-exhausted') {
-             alert("Kuota harian Firebase terlampaui.");
-          } else {
-             // Jangan alert error koneksi biasa agar tidak mengganggu
-             console.log("Koneksi database terganggu, mencoba ulang...");
-          }
-          
+          // Jika error permission/index, tetap stop loading
           setLoading(false);
         });
 
@@ -165,7 +182,7 @@
         }, { income: 0, expense: 0, balance: 0 });
       }, [transactions]);
 
-      // --- Fungsi CRUD & Utilitas ---
+      // --- Fungsi-fungsi ---
       const handleSubmit = async (e) => {
         e.preventDefault();
         if (!user || !formData.amount || !formData.description) return;
@@ -194,11 +211,7 @@
           closeModal();
         } catch (error) {
           console.error("Error saving:", error);
-          if (error.message.includes("Cloud Firestore API")) {
-             alert("Gagal menyimpan: Database belum diaktifkan di Firebase Console.");
-          } else {
-             alert("Gagal menyimpan data: " + error.message);
-          }
+          alert("Gagal menyimpan data.");
         }
       };
 
@@ -304,7 +317,7 @@
         );
       }
 
-      // --- Render UI ---
+      // --- Tampilan Utama ---
       return (
         <div className="min-h-screen bg-slate-50 pb-20 md:pb-10">
           
@@ -316,11 +329,19 @@
                 <h1 className="text-xl font-bold tracking-tight">Dompet Couple</h1>
               </div>
               <div className="flex gap-2">
-                <button onClick={handleShareClick} className="flex items-center gap-1 text-xs bg-emerald-700 hover:bg-emerald-800 py-1.5 px-3 rounded-md transition">
-                  <Share2 className="w-4 h-4" /> <span className="hidden sm:inline">Share</span>
+                <button 
+                  onClick={handleShareClick}
+                  className="flex items-center gap-1 text-xs bg-emerald-700 hover:bg-emerald-800 py-1.5 px-3 rounded-md transition"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">Share</span>
                 </button>
-                <button onClick={downloadCSV} className="flex items-center gap-1 text-xs bg-emerald-700 hover:bg-emerald-800 py-1.5 px-3 rounded-md transition">
-                  <FileSpreadsheet className="w-4 h-4" /> <span className="hidden sm:inline">Export</span>
+                <button 
+                  onClick={downloadCSV}
+                  className="flex items-center gap-1 text-xs bg-emerald-700 hover:bg-emerald-800 py-1.5 px-3 rounded-md transition"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span className="hidden sm:inline">Export</span>
                 </button>
               </div>
             </div>
@@ -330,6 +351,7 @@
             
             {/* Kartu Ringkasan */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Total Saldo */}
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center relative overflow-hidden">
                 <div className={`absolute top-0 left-0 w-full h-1 ${stats.balance >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
                 <p className="text-sm text-slate-500 font-medium mb-1">Total Saldo Bersama</p>
@@ -337,33 +359,58 @@
                   {formatRupiah(stats.balance)}
                 </h2>
               </div>
+
+              {/* Pemasukan */}
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600"><TrendingUp className="w-6 h-6" /></div>
-                <div><p className="text-xs text-slate-500 font-medium uppercase tracking-wider">Pemasukan</p><p className="text-xl font-bold text-emerald-600">{formatRupiah(stats.income)}</p></div>
+                <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                  <TrendingUp className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">Pemasukan</p>
+                  <p className="text-xl font-bold text-emerald-600">{formatRupiah(stats.income)}</p>
+                </div>
               </div>
+
+              {/* Pengeluaran */}
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-rose-600"><TrendingDown className="w-6 h-6" /></div>
-                <div><p className="text-xs text-slate-500 font-medium uppercase tracking-wider">Pengeluaran</p><p className="text-xl font-bold text-rose-600">{formatRupiah(stats.expense)}</p></div>
+                <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-rose-600">
+                  <TrendingDown className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">Pengeluaran</p>
+                  <p className="text-xl font-bold text-rose-600">{formatRupiah(stats.expense)}</p>
+                </div>
               </div>
             </div>
 
-            {/* Tombol Tambah (Floating & Desktop) */}
+            {/* Tombol Tambah (Mobile Floating) */}
             <div className="fixed bottom-6 right-6 z-30 md:hidden">
-              <button onClick={() => { setEditingId(null); setIsModalOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95">
+              <button 
+                onClick={() => { setEditingId(null); setIsModalOpen(true); }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
+              >
                 <PlusCircle className="w-8 h-8" />
               </button>
             </div>
+
+            {/* Tombol Tambah (Desktop) */}
             <div className="hidden md:flex justify-end">
-              <button onClick={() => { setEditingId(null); setIsModalOpen(true); }} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg shadow-md transition font-medium">
-                <PlusCircle className="w-5 h-5" /> Tambah Transaksi
+              <button 
+                onClick={() => { setEditingId(null); setIsModalOpen(true); }}
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg shadow-md transition font-medium"
+              >
+                <PlusCircle className="w-5 h-5" />
+                Tambah Transaksi
               </button>
             </div>
 
-            {/* List Transaksi */}
+            {/* Daftar Transaksi */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                 <h3 className="font-semibold text-slate-700">Riwayat Transaksi</h3>
-                <span className="text-xs text-slate-400 bg-white px-2 py-1 rounded border border-slate-200">{transactions.length} Item</span>
+                <span className="text-xs text-slate-400 bg-white px-2 py-1 rounded border border-slate-200">
+                  {transactions.length} Item
+                </span>
               </div>
 
               {transactions.length === 0 ? (
@@ -393,20 +440,34 @@
                           </td>
                           <td className="px-6 py-3 text-center">
                             {t.who ? (
-                              <span className={`inline-flex items-center justify-center px-2 py-1 rounded font-bold text-xs ${t.who === 'Aa' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>{t.who}</span>
-                            ) : (<span className="text-slate-300">-</span>)}
+                              <span className={`inline-flex items-center justify-center px-2 py-1 rounded font-bold text-xs
+                                ${t.who === 'Aa' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
+                                {t.who}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300">-</span>
+                            )}
                           </td>
                           <td className="px-6 py-3">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${t.type === 'income' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{t.category}</span>
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
+                              ${t.type === 'income' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                              {t.category}
+                            </span>
                           </td>
-                          <td className="px-6 py-3 text-slate-700 font-medium">{t.description}</td>
+                          <td className="px-6 py-3 text-slate-700 font-medium">
+                            {t.description}
+                          </td>
                           <td className={`px-6 py-3 text-right font-bold whitespace-nowrap ${t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
                             {t.type === 'income' ? '+' : '-'} {formatRupiah(t.amount)}
                           </td>
                           <td className="px-6 py-3 text-center whitespace-nowrap">
                             <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => handleEditClick(t)} className="text-slate-400 hover:text-emerald-500 p-1.5 rounded hover:bg-emerald-50 transition"><Pencil size={16} /></button>
-                              <button onClick={() => handleDelete(t.id)} className="text-slate-400 hover:text-rose-500 p-1.5 rounded hover:bg-rose-50 transition"><Trash2 size={16} /></button>
+                              <button onClick={() => handleEditClick(t)} className="text-slate-400 hover:text-emerald-500 p-1.5 rounded hover:bg-emerald-50 transition">
+                                <Pencil size={16} />
+                              </button>
+                              <button onClick={() => handleDelete(t.id)} className="text-slate-400 hover:text-rose-500 p-1.5 rounded hover:bg-rose-50 transition">
+                                <Trash2 size={16} />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -443,17 +504,21 @@
             </div>
           )}
 
-          {/* Modal Form */}
+          {/* Modal Form Transaksi */}
           {isModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in">
                 <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                  <h3 className="font-bold text-lg text-slate-800">{editingId ? 'Edit Transaksi' : 'Catat Transaksi Baru'}</h3>
-                  <button onClick={closeModal} className="p-2 -mr-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors"><X size={24} /></button>
+                  <h3 className="font-bold text-lg text-slate-800">
+                    {editingId ? 'Edit Transaksi' : 'Catat Transaksi Baru'}
+                  </h3>
+                  <button onClick={closeModal} className="p-2 -mr-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors">
+                    <X size={24} />
+                  </button>
                 </div>
                 
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                  {/* Tipe */}
+                  {/* Pilihan Tipe */}
                   <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-lg">
                     <button type="button" onClick={() => setFormData({...formData, type: 'income', category: categories.income[0]})} className={`py-2 text-sm font-medium rounded-md transition flex items-center justify-center gap-2 ${formData.type === 'income' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
                       <TrendingUp size={16} /> Pemasukan
@@ -462,32 +527,57 @@
                       <TrendingDown size={16} /> Pengeluaran
                     </button>
                   </div>
-                  
-                  {/* Siapa */}
+
+                  {/* Pilihan Siapa */}
                   <div className="bg-blue-50/50 p-3 rounded-lg border border-blue-100">
                     <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Siapa yang transaksi?</label>
                     <div className="flex gap-4">
                       <label className="flex items-center gap-2 cursor-pointer group">
-                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition ${formData.who === 'Aa' ? 'border-blue-500 bg-blue-500' : 'border-slate-300 bg-white'}`}>{formData.who === 'Aa' && <div className="w-2 h-2 rounded-full bg-white" />}</div>
+                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition ${formData.who === 'Aa' ? 'border-blue-500 bg-blue-500' : 'border-slate-300 bg-white'}`}>
+                          {formData.who === 'Aa' && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
                         <input type="radio" name="who" value="Aa" checked={formData.who === 'Aa'} onChange={(e) => setFormData({...formData, who: e.target.value})} className="hidden" />
                         <span className={`font-medium transition ${formData.who === 'Aa' ? 'text-blue-700' : 'text-slate-600'}`}>Aa</span>
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer group">
-                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition ${formData.who === 'Adek' ? 'border-pink-500 bg-pink-500' : 'border-slate-300 bg-white'}`}>{formData.who === 'Adek' && <div className="w-2 h-2 rounded-full bg-white" />}</div>
+                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition ${formData.who === 'Adek' ? 'border-pink-500 bg-pink-500' : 'border-slate-300 bg-white'}`}>
+                          {formData.who === 'Adek' && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
                         <input type="radio" name="who" value="Adek" checked={formData.who === 'Adek'} onChange={(e) => setFormData({...formData, who: e.target.value})} className="hidden" />
                         <span className={`font-medium transition ${formData.who === 'Adek' ? 'text-pink-700' : 'text-slate-600'}`}>Adek</span>
                       </label>
                     </div>
                   </div>
 
-                  {/* Input Fields */}
-                  <div><label className="block text-sm font-medium text-slate-600 mb-1">Jumlah (Rp)</label><input type="text" inputMode="numeric" required placeholder="0" className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition text-lg font-semibold" value={formatInputDisplay(formData.amount)} onChange={handleAmountChange} /></div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-slate-600 mb-1">Tanggal</label><input type="date" required className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} /></div>
-                    <div><label className="block text-sm font-medium text-slate-600 mb-1">Kategori</label><select className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm bg-white" value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}>{(formData.type === 'income' ? categories.income : categories.expense).map(cat => (<option key={cat} value={cat}>{cat}</option>))}</select></div>
+                  {/* Input Jumlah */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1">Jumlah (Rp)</label>
+                    <input type="text" inputMode="numeric" required placeholder="0" className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition text-lg font-semibold" value={formatInputDisplay(formData.amount)} onChange={handleAmountChange} />
                   </div>
-                  <div><label className="block text-sm font-medium text-slate-600 mb-1">Deskripsi</label><input type="text" required placeholder={formData.type === 'income' ? "Contoh: Gaji bulan ini" : "Contoh: Makan siang"} className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none transition text-sm" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} /></div>
 
+                  {/* Tanggal & Kategori */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-600 mb-1">Tanggal</label>
+                      <input type="date" required className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-600 mb-1">Kategori</label>
+                      <select className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm bg-white" value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}>
+                        {(formData.type === 'income' ? categories.income : categories.expense).map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Deskripsi */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1">Deskripsi</label>
+                    <input type="text" required placeholder={formData.type === 'income' ? "Contoh: Gaji bulan ini" : "Contoh: Makan siang"} className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none transition text-sm" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
+                  </div>
+
+                  {/* Tombol Simpan & Batal */}
                   <div className="flex gap-3 pt-2">
                     <button type="button" onClick={closeModal} className="flex-1 py-3 rounded-lg font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 hover:text-slate-700 transition active:scale-95">Batal</button>
                     <button type="submit" className={`flex-[2] py-3 rounded-lg font-bold text-white shadow-lg mt-0 transition active:scale-95 flex items-center justify-center gap-2 ${formData.type === 'income' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-200'}`}>
