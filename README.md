@@ -1,1 +1,591 @@
-# dompet-couple
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dompet Couple - Keuangan Bersama</title>
+  
+  <!-- 1. Tailwind CSS (Untuk Tampilan) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- 2. Pengaturan Import Map (Agar bisa pakai 'import' seperti di editor) -->
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js",
+        "lucide-react": "https://esm.sh/lucide-react@0.300.0"
+      }
+    }
+  </script>
+
+  <!-- 3. Babel Standalone (Untuk menerjemahkan React JSX di browser) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <style>
+    /* Animasi tambahan */
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-in { animation: fadeIn 0.3s ease-out forwards; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans">
+  
+  <!-- Tempat Aplikasi React akan Muncul -->
+  <div id="root"></div>
+
+  <!-- 4. Kode Utama Aplikasi -->
+  <script type="text/babel" data-type="module">
+    import React, { useState, useEffect, useMemo } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { initializeApp } from 'firebase/app';
+    import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+    import { 
+      getFirestore, collection, addDoc, deleteDoc, updateDoc, 
+      doc, query, orderBy, onSnapshot, serverTimestamp 
+    } from 'firebase/firestore';
+    import { 
+      PlusCircle, Wallet, TrendingUp, TrendingDown, Trash2, 
+      FileSpreadsheet, Save, X, Pencil, Share2, Copy, AlertCircle, Check 
+    } from 'lucide-react';
+    
+    const firebaseConfig = {
+  apiKey: "AIzaSyAFxTyMgT1g-_P_sFoHitqLAFDd8KWIkMY",
+  authDomain: "keuangan-121222.firebaseapp.com",
+  databaseURL: "https://keuangan-121222-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "keuangan-121222",
+  storageBucket: "keuangan-121222.firebasestorage.app",
+  messagingSenderId: "108150191528",
+  appId: "1:108150191528:web:7a84f02e957d27431dd99d",
+  measurementId: "G-1PK70XXVF6"
+};
+
+    // ID Unik untuk memisahkan data (Boleh diganti sesuka hati)
+    const APP_ID = "dompet_couple_kita_v1";
+    const COLLECTION_PATH = ['apps', APP_ID, 'transactions'];
+
+    // Inisialisasi Firebase
+    let app, auth, db;
+    // Cek apakah config sudah diisi (ada apiKey nya)
+    const isConfigured = firebaseConfig && firebaseConfig.apiKey;
+    
+    if (isConfigured) {
+      app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      db = getFirestore(app);
+    }
+
+    // --- Komponen Utama Aplikasi ---
+    function App() {
+      // Jika belum dikonfigurasi, tampilkan panduan
+      if (!isConfigured) {
+        return (
+          <div className="min-h-screen flex items-center justify-center p-6">
+            <div className="bg-white p-8 rounded-2xl shadow-xl max-w-lg text-center border border-rose-100">
+              <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertCircle size={32} />
+              </div>
+              <h2 className="text-2xl font-bold text-slate-800 mb-2">Database Belum Terhubung</h2>
+              <p className="text-slate-600 mb-6 leading-relaxed">
+                Agar aplikasi ini bisa menyimpan data secara online, Anda perlu menghubungkannya ke Firebase milik Anda sendiri.
+              </p>
+              <div className="text-left bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm font-mono text-slate-700 overflow-x-auto">
+                1. Buka file <strong>index.html</strong> ini di teks editor.<br/>
+                2. Cari bagian <code>const firebaseConfig = &#123;...&#125;</code>.<br/>
+                3. Isi dengan config dari Firebase Console Anda.
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      const [user, setUser] = useState(null);
+      const [transactions, setTransactions] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [isModalOpen, setIsModalOpen] = useState(false);
+      const [editingId, setEditingId] = useState(null); 
+      
+      // Share State
+      const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+      const [currentUrl, setCurrentUrl] = useState('');
+      
+      // Form State
+      const [formData, setFormData] = useState({
+        type: 'expense', 
+        amount: '',
+        category: 'Makan & Minum',
+        description: '',
+        who: 'Aa', 
+        date: new Date().toISOString().substr(0, 10)
+      });
+
+      // --- 1. Authentication (Login Anonim) ---
+      useEffect(() => {
+        signInAnonymously(auth).catch((error) => {
+            console.error("Gagal login anonim:", error);
+            alert("Gagal terhubung ke database. Cek konfigurasi Firebase Anda.");
+        });
+        
+        const unsubscribe = onAuthStateChanged(auth, setUser);
+        return () => unsubscribe();
+      }, []);
+
+      // --- 2. Ambil Data Realtime ---
+      useEffect(() => {
+        if (!user) return;
+
+        const transactionsRef = collection(db, ...COLLECTION_PATH);
+        
+        // Menggunakan onSnapshot untuk update realtime
+        const unsubscribe = onSnapshot(transactionsRef, (snapshot) => {
+          const data = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          
+          // Sort di client side agar lebih cepat dan hemat index
+          data.sort((a, b) => new Date(b.date) - new Date(a.date));
+          
+          setTransactions(data);
+          setLoading(false);
+        }, (error) => {
+          console.error("Firestore Error:", error);
+          // Jika error permission/index, tetap stop loading
+          setLoading(false);
+        });
+
+        return () => unsubscribe();
+      }, [user]);
+
+      // --- 3. Hitung Statistik ---
+      const stats = useMemo(() => {
+        return transactions.reduce((acc, curr) => {
+          const amount = parseFloat(curr.amount) || 0;
+          if (curr.type === 'income') {
+            acc.income += amount;
+            acc.balance += amount;
+          } else {
+            acc.expense += amount;
+            acc.balance -= amount;
+          }
+          return acc;
+        }, { income: 0, expense: 0, balance: 0 });
+      }, [transactions]);
+
+      // --- Fungsi-fungsi ---
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!user || !formData.amount || !formData.description) return;
+
+        try {
+          const dataToSave = {
+            ...formData,
+            amount: parseFloat(formData.amount),
+          };
+
+          if (editingId) {
+            const docRef = doc(db, ...COLLECTION_PATH, editingId);
+            await updateDoc(docRef, {
+              ...dataToSave,
+              updatedAt: serverTimestamp()
+            });
+          } else {
+            const transactionsRef = collection(db, ...COLLECTION_PATH);
+            await addDoc(transactionsRef, {
+              ...dataToSave,
+              createdAt: serverTimestamp(),
+              userId: user.uid
+            });
+          }
+          
+          closeModal();
+        } catch (error) {
+          console.error("Error saving:", error);
+          alert("Gagal menyimpan data.");
+        }
+      };
+
+      const handleEditClick = (transaction) => {
+        setFormData({
+          type: transaction.type,
+          amount: transaction.amount,
+          category: transaction.category,
+          description: transaction.description,
+          who: transaction.who || 'Aa',
+          date: transaction.date
+        });
+        setEditingId(transaction.id);
+        setIsModalOpen(true);
+      };
+
+      const closeModal = () => {
+        setIsModalOpen(false);
+        setEditingId(null);
+        setFormData({
+          type: 'expense',
+          amount: '',
+          category: 'Makan & Minum',
+          description: '',
+          who: 'Aa',
+          date: new Date().toISOString().substr(0, 10)
+        });
+      };
+
+      const handleDelete = async (id) => {
+        if (!window.confirm("Hapus transaksi ini?")) return;
+        try {
+          const docRef = doc(db, ...COLLECTION_PATH, id);
+          await deleteDoc(docRef);
+        } catch (error) {
+          console.error("Error deleting:", error);
+        }
+      };
+
+      const downloadCSV = () => {
+        const headers = ["Tanggal", "Oleh", "Tipe", "Kategori", "Deskripsi", "Jumlah"];
+        const rows = transactions.map(t => [
+          t.date,
+          t.who || '-', 
+          t.type === 'income' ? 'Pemasukan' : 'Pengeluaran',
+          t.category,
+          `"${t.description}"`, 
+          t.amount
+        ]);
+
+        const csvContent = "data:text/csv;charset=utf-8," 
+          + headers.join(",") + "\n" 
+          + rows.map(e => e.join(",")).join("\n");
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `keuangan_couple_${new Date().toISOString().slice(0,10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      };
+
+      const handleShareClick = () => {
+        setCurrentUrl(window.location.href);
+        setIsShareModalOpen(true);
+      };
+
+      const formatRupiah = (number) => {
+        return new Intl.NumberFormat('id-ID', {
+          style: 'currency',
+          currency: 'IDR',
+          minimumFractionDigits: 0
+        }).format(number);
+      };
+
+      const formatInputDisplay = (value) => {
+        if (value === '' || value === null || value === undefined) return '';
+        const cleanNum = value.toString().replace(/\D/g, '');
+        if (!cleanNum) return '';
+        return new Intl.NumberFormat('id-ID').format(cleanNum);
+      };
+
+      const handleAmountChange = (e) => {
+        const rawValue = e.target.value.replace(/\D/g, '');
+        setFormData({ ...formData, amount: rawValue });
+      };
+
+      const categories = {
+        expense: ['Makan & Minum', 'Belanja', 'Transportasi', 'Tagihan', 'Hiburan', 'Lainnya'],
+        income: ['Gaji', 'Bonus', 'Hadiah', 'Investasi', 'Lainnya']
+      };
+
+      // --- Tampilan Loading ---
+      if (loading) {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-gray-50 text-slate-600">
+            <div className="animate-pulse flex flex-col items-center">
+              <Wallet className="w-12 h-12 mb-4 text-emerald-500" />
+              <p>Memuat Data Keuangan...</p>
+            </div>
+          </div>
+        );
+      }
+
+      // --- Tampilan Utama ---
+      return (
+        <div className="min-h-screen bg-slate-50 pb-20 md:pb-10">
+          
+          {/* Header */}
+          <header className="bg-emerald-600 text-white p-4 shadow-lg sticky top-0 z-10">
+            <div className="max-w-4xl mx-auto flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Wallet className="w-6 h-6" />
+                <h1 className="text-xl font-bold tracking-tight">Dompet Couple</h1>
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={handleShareClick}
+                  className="flex items-center gap-1 text-xs bg-emerald-700 hover:bg-emerald-800 py-1.5 px-3 rounded-md transition"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">Share</span>
+                </button>
+                <button 
+                  onClick={downloadCSV}
+                  className="flex items-center gap-1 text-xs bg-emerald-700 hover:bg-emerald-800 py-1.5 px-3 rounded-md transition"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span className="hidden sm:inline">Export</span>
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <main className="max-w-4xl mx-auto p-4 space-y-6">
+            
+            {/* Kartu Ringkasan */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Total Saldo */}
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center relative overflow-hidden">
+                <div className={`absolute top-0 left-0 w-full h-1 ${stats.balance >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
+                <p className="text-sm text-slate-500 font-medium mb-1">Total Saldo Bersama</p>
+                <h2 className={`text-3xl font-bold ${stats.balance >= 0 ? 'text-slate-800' : 'text-rose-600'}`}>
+                  {formatRupiah(stats.balance)}
+                </h2>
+              </div>
+
+              {/* Pemasukan */}
+              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                  <TrendingUp className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">Pemasukan</p>
+                  <p className="text-xl font-bold text-emerald-600">{formatRupiah(stats.income)}</p>
+                </div>
+              </div>
+
+              {/* Pengeluaran */}
+              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-rose-600">
+                  <TrendingDown className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">Pengeluaran</p>
+                  <p className="text-xl font-bold text-rose-600">{formatRupiah(stats.expense)}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Tombol Tambah (Mobile Floating) */}
+            <div className="fixed bottom-6 right-6 z-30 md:hidden">
+              <button 
+                onClick={() => { setEditingId(null); setIsModalOpen(true); }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
+              >
+                <PlusCircle className="w-8 h-8" />
+              </button>
+            </div>
+
+            {/* Tombol Tambah (Desktop) */}
+            <div className="hidden md:flex justify-end">
+              <button 
+                onClick={() => { setEditingId(null); setIsModalOpen(true); }}
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg shadow-md transition font-medium"
+              >
+                <PlusCircle className="w-5 h-5" />
+                Tambah Transaksi
+              </button>
+            </div>
+
+            {/* Daftar Transaksi */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h3 className="font-semibold text-slate-700">Riwayat Transaksi</h3>
+                <span className="text-xs text-slate-400 bg-white px-2 py-1 rounded border border-slate-200">
+                  {transactions.length} Item
+                </span>
+              </div>
+
+              {transactions.length === 0 ? (
+                <div className="p-10 text-center text-slate-400">
+                  <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                  <p>Belum ada data transaksi.</p>
+                  <p className="text-sm">Klik tombol tambah untuk memulai.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                      <tr>
+                        <th className="px-6 py-3 font-medium whitespace-nowrap">Tanggal</th>
+                        <th className="px-6 py-3 font-medium text-center">Oleh</th>
+                        <th className="px-6 py-3 font-medium">Kategori</th>
+                        <th className="px-6 py-3 font-medium w-full">Deskripsi</th>
+                        <th className="px-6 py-3 font-medium text-right">Jumlah</th>
+                        <th className="px-6 py-3 font-medium text-center">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {transactions.map((t) => (
+                        <tr key={t.id} className="hover:bg-slate-50 transition group">
+                          <td className="px-6 py-3 text-slate-500 whitespace-nowrap">
+                            {new Date(t.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </td>
+                          <td className="px-6 py-3 text-center">
+                            {t.who ? (
+                              <span className={`inline-flex items-center justify-center px-2 py-1 rounded font-bold text-xs
+                                ${t.who === 'Aa' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
+                                {t.who}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300">-</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-3">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
+                              ${t.type === 'income' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                              {t.category}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3 text-slate-700 font-medium">
+                            {t.description}
+                          </td>
+                          <td className={`px-6 py-3 text-right font-bold whitespace-nowrap ${t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {t.type === 'income' ? '+' : '-'} {formatRupiah(t.amount)}
+                          </td>
+                          <td className="px-6 py-3 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => handleEditClick(t)} className="text-slate-400 hover:text-emerald-500 p-1.5 rounded hover:bg-emerald-50 transition">
+                                <Pencil size={16} />
+                              </button>
+                              <button onClick={() => handleDelete(t.id)} className="text-slate-400 hover:text-rose-500 p-1.5 rounded hover:bg-rose-50 transition">
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </main>
+
+          {/* Modal Share */}
+          {isShareModalOpen && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden p-6 text-center">
+                <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-600">
+                  <Share2 size={24} />
+                </div>
+                <h3 className="text-lg font-bold text-slate-800 mb-2">Bagikan Link</h3>
+                <p className="text-sm text-slate-500 mb-4">Salin link di bawah ini dan kirimkan ke pasangan Anda.</p>
+                <div className="bg-slate-100 p-3 rounded-lg border border-slate-200 mb-4 flex items-center gap-2">
+                  <input type="text" readOnly value={currentUrl} className="bg-transparent border-none outline-none text-xs text-slate-600 w-full font-mono break-all" onClick={(e) => e.target.select()} />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setIsShareModalOpen(false)} className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-600 font-medium hover:bg-slate-50 transition">Tutup</button>
+                  <button onClick={() => {
+                    const input = document.querySelector('input[type="text"]');
+                    if (input) { input.select(); document.execCommand('copy'); alert("Link disalin!"); }
+                  }} className="flex-1 py-2.5 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition flex items-center justify-center gap-2">
+                    <Copy size={16} /> Salin Link
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Form Transaksi */}
+          {isModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in">
+                <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                  <h3 className="font-bold text-lg text-slate-800">
+                    {editingId ? 'Edit Transaksi' : 'Catat Transaksi Baru'}
+                  </h3>
+                  <button onClick={closeModal} className="p-2 -mr-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors">
+                    <X size={24} />
+                  </button>
+                </div>
+                
+                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                  {/* Pilihan Tipe */}
+                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-lg">
+                    <button type="button" onClick={() => setFormData({...formData, type: 'income', category: categories.income[0]})} className={`py-2 text-sm font-medium rounded-md transition flex items-center justify-center gap-2 ${formData.type === 'income' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                      <TrendingUp size={16} /> Pemasukan
+                    </button>
+                    <button type="button" onClick={() => setFormData({...formData, type: 'expense', category: categories.expense[0]})} className={`py-2 text-sm font-medium rounded-md transition flex items-center justify-center gap-2 ${formData.type === 'expense' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                      <TrendingDown size={16} /> Pengeluaran
+                    </button>
+                  </div>
+
+                  {/* Pilihan Siapa */}
+                  <div className="bg-blue-50/50 p-3 rounded-lg border border-blue-100">
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Siapa yang transaksi?</label>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer group">
+                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition ${formData.who === 'Aa' ? 'border-blue-500 bg-blue-500' : 'border-slate-300 bg-white'}`}>
+                          {formData.who === 'Aa' && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
+                        <input type="radio" name="who" value="Aa" checked={formData.who === 'Aa'} onChange={(e) => setFormData({...formData, who: e.target.value})} className="hidden" />
+                        <span className={`font-medium transition ${formData.who === 'Aa' ? 'text-blue-700' : 'text-slate-600'}`}>Aa</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer group">
+                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition ${formData.who === 'Adek' ? 'border-pink-500 bg-pink-500' : 'border-slate-300 bg-white'}`}>
+                          {formData.who === 'Adek' && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
+                        <input type="radio" name="who" value="Adek" checked={formData.who === 'Adek'} onChange={(e) => setFormData({...formData, who: e.target.value})} className="hidden" />
+                        <span className={`font-medium transition ${formData.who === 'Adek' ? 'text-pink-700' : 'text-slate-600'}`}>Adek</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Input Jumlah */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1">Jumlah (Rp)</label>
+                    <input type="text" inputMode="numeric" required placeholder="0" className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition text-lg font-semibold" value={formatInputDisplay(formData.amount)} onChange={handleAmountChange} />
+                  </div>
+
+                  {/* Tanggal & Kategori */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-600 mb-1">Tanggal</label>
+                      <input type="date" required className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-600 mb-1">Kategori</label>
+                      <select className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm bg-white" value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}>
+                        {(formData.type === 'income' ? categories.income : categories.expense).map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Deskripsi */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1">Deskripsi</label>
+                    <input type="text" required placeholder={formData.type === 'income' ? "Contoh: Gaji bulan ini" : "Contoh: Makan siang"} className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none transition text-sm" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
+                  </div>
+
+                  {/* Tombol Simpan & Batal */}
+                  <div className="flex gap-3 pt-2">
+                    <button type="button" onClick={closeModal} className="flex-1 py-3 rounded-lg font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 hover:text-slate-700 transition active:scale-95">Batal</button>
+                    <button type="submit" className={`flex-[2] py-3 rounded-lg font-bold text-white shadow-lg mt-0 transition active:scale-95 flex items-center justify-center gap-2 ${formData.type === 'income' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-200'}`}>
+                      <Save size={20} /> {editingId ? 'Simpan' : 'Simpan'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
